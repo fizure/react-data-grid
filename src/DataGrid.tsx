@@ -60,6 +60,7 @@ type DefaultColumnOptions<R, SR> = Pick<Column<R, SR>,
   | 'sortable'
 >;
 
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
 const body = globalThis.document?.body;
 
 export interface DataGridHandle {
@@ -103,6 +104,8 @@ export interface DataGridProps<R, SR = unknown> extends SharedDivProps {
   headerRowHeight?: number;
   /** The height of the header filter row in pixels */
   headerFiltersHeight?: number;
+  /** The height of each summary row in pixels */
+  summaryRowHeight?: number;
 
   /**
    * Feature props
@@ -117,7 +120,7 @@ export interface DataGridProps<R, SR = unknown> extends SharedDivProps {
   sortDirection?: SortDirection;
   /** Function called whenever grid is sorted*/
   onSort?: (columnKey: string, direction: SortDirection) => void;
-  filters?: Filters;
+  filters?: Readonly<Filters>;
   onFiltersChange?: (filters: Filters) => void;
   defaultColumnOptions?: DefaultColumnOptions<R, SR>;
   groupBy?: readonly string[];
@@ -178,6 +181,7 @@ function DataGrid<R, SR>({
   rowHeight = 35,
   headerRowHeight = rowHeight,
   headerFiltersHeight = 45,
+  summaryRowHeight = rowHeight,
   // Feature props
   selectedRows,
   onSelectedRowsChange,
@@ -249,7 +253,7 @@ function DataGrid<R, SR>({
   const headerRowsCount = enableFilterRow ? 2 : 1;
   const summaryRowsCount = summaryRows?.length ?? 0;
   const totalHeaderHeight = headerRowHeight + (enableFilterRow ? headerFiltersHeight : 0);
-  const clientHeight = gridHeight - totalHeaderHeight - summaryRowsCount * rowHeight;
+  const clientHeight = gridHeight - totalHeaderHeight - summaryRowsCount * summaryRowHeight;
   const isSelectable = selectedRows !== undefined && onSelectedRowsChange !== undefined;
 
   const { columns, viewportColumns, layoutCssVars, columnMetrics, totalColumnWidth, lastFrozenColumnIndex, totalFrozenColumnWidth, groupBy } = useViewportColumns({
@@ -312,12 +316,14 @@ function DataGrid<R, SR>({
   * callbacks
   */
   const handleColumnResize = useCallback((column: CalculatedColumn<R, SR>, width: number) => {
-    const newColumnWidths = new Map(columnWidths);
-    newColumnWidths.set(column.key, width);
-    setColumnWidths(newColumnWidths);
+    setColumnWidths(columnWidths => {
+      const newColumnWidths = new Map(columnWidths);
+      newColumnWidths.set(column.key, width);
+      return newColumnWidths;
+    });
 
     onColumnResize?.(column.idx, width);
-  }, [columnWidths, onColumnResize]);
+  }, [onColumnResize]);
 
   const setDraggedOverRowIdx = useCallback((rowIdx?: number) => {
     setOverRowIdx(rowIdx);
@@ -750,8 +756,6 @@ function DataGrid<R, SR>({
       if (!onNavigation(event)) return;
     }
     const { key, shiftKey } = event;
-    const ctrlKey = isCtrlKeyHeldDown(event);
-    let nextPosition = getNextPosition(key, ctrlKey, shiftKey);
     let mode = cellNavigationMode;
     if (key === 'Tab') {
       // If we are in a position to leave the grid, stop editing but stay in that cell
@@ -769,7 +773,9 @@ function DataGrid<R, SR>({
     // Do not allow focus to leave
     event.preventDefault();
 
-    nextPosition = getNextSelectedCellPosition<R, SR>({
+    const ctrlKey = isCtrlKeyHeldDown(event);
+    let nextPosition = getNextPosition(key, ctrlKey, shiftKey);
+    nextPosition = getNextSelectedCellPosition({
       columns,
       rowsCount: rows.length,
       cellNavigationMode: mode,
@@ -915,6 +921,7 @@ function DataGrid<R, SR>({
         '--filter-row-height': `${headerFiltersHeight}px`,
         '--row-width': `${totalColumnWidth}px`,
         '--row-height': `${rowHeight}px`,
+        '--summary-row-height': `${summaryRowHeight}px`,
         ...layoutCssVars
       } as unknown as React.CSSProperties}
       ref={gridRef}
@@ -955,7 +962,7 @@ function DataGrid<R, SR>({
               key={rowIdx}
               rowIdx={rowIdx}
               row={row}
-              bottom={rowHeight * (summaryRows.length - 1 - rowIdx)}
+              bottom={summaryRowHeight * (summaryRows.length - 1 - rowIdx)}
               viewportColumns={viewportColumns}
             />
           ))}
